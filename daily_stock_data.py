@@ -12,7 +12,7 @@ class DailyStockDataDownloader():
     def target_url(self):
         url = self.base_url + "function=TIME_SERIES_DAILY&outputsize=full&"
         url = url + "apikey=" + self.licence + "&"
-        url = url + "symbol=" + self.symbol 
+        url = url + "symbol=" + self.symbol
         return url
 
     def retrieve_json_data(self):
@@ -26,6 +26,9 @@ class DailyStockDataDownloader():
 # Make basis request to get data
 
 class DailyStockData():
+    from urllib import request
+    import json
+    import psycopg2
 
     def __init__(self, symbol="MSFT"):
         self.symbol = symbol
@@ -39,9 +42,9 @@ class DailyStockData():
                                       host="127.0.0.1",
                                       port="5432",
                                       database="")
-        return connection        
+        return connection
 
-    def connect_db_execute(self, lines, method = "get"):
+    def connect_db_execute(self, lines, method="get"):
         record = None
         try:
             connection = self.connect_db()
@@ -56,7 +59,7 @@ class DailyStockData():
 
         except (Exception, psycopg2.Error) as error:
             print("Error while connecting to PostgreSQL", error)
-        
+
         finally:
             cursor.close()
             connection.close()
@@ -77,7 +80,8 @@ class DailyStockData():
 
         # Add to "Symbol"_Historical_Data Table
         # 1. Step: Create new table:
-        create_db_line = "create table " + symbol.lower() + "_historical_data(date_field date primary key, open float, high float, low float, close float, volume bigint);"
+        create_db_line = "create table " + symbol.lower() + \
+            "_historical_data(date_field date primary key, open float, high float, low float, close float, volume bigint);"
         self.connect_db_execute(create_db_line, method="push")
 
         connection = self.connect_db()
@@ -94,23 +98,35 @@ class DailyStockData():
                 "_historical_data values ('" + date_ + "', " + open_ + ", " + \
                 high_ + ", " + close_ + ", " + low_ + ", " + volume_ + ");"
             cursor.execute(line)
-        
+
         connection.commit()
         cursor.close()
         connection.close()
-    
+
     def get_data(self, symbol):
         line = "select * from " + symbol + "_historical_data;"
         response = self.connect_db_execute(line)
         data_frame = pd.DataFrame(response)
         data_frame.index = data_frame[0]
         data_frame = data_frame.drop(columns=[0])
-        data_frame = data_frame.rename(columns={1:"Open", 2:"High", 3:"Low", 4:"Close", 5:"Volume"})
+        data_frame = data_frame.rename(
+            columns={1: "Open", 2: "High", 3: "Low", 4: "Close", 5: "Volume"})
         data_frame.index.name = "Date"
         data_frame.index = pd.to_datetime(data_frame.index)
         return data_frame.iloc[::-1]
 
-    def get_pricing_data(self, symbol="MSFT", start_date="2014-01-01", end_date="2015-01-01"):
+    def get_pricing_data(self, symbol="MSFT", start_date="2014-01-01", end_date="2015-01-01", column_type="Close"):
+        columns = ["Open", "High", "Low", "Close", "Volume"]
+        symbol = symbol.upper()
+        if not self.database_contains_symbol(symbol):
+            self.download_and_add_data(symbol)
+        data_frame = self.get_data(symbol)
+        columns = ["Open", "High", "Low", "Close", "Volume"]
+        columns.remove(column_type)
+        data_frame = data_frame.drop(columns=columns)
+        return data_frame[start_date:end_date]
+
+    def get_pricing_full_data(self, symbol="MSFT", start_date="2014-01-01", end_date="2015-01-01"):
         symbol = symbol.upper()
         if not self.database_contains_symbol(symbol):
             self.download_and_add_data(symbol)
